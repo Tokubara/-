@@ -1,0 +1,142 @@
+---
+title: "线性方程的迭代解法"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    extra_dependencies:
+      ctexcap: UTF8
+---
+## 代码的一些说明
+首先观察到这个矩阵，是弱对角占优矩阵，而且不可约，因此Jacobi和G-S必然收敛，而SOR如果满足0<ω<=1也一定是收敛的，但对于SOR这是充分非必要条件，就是说，如果ω>1，也可能会收敛。这里默认SOR的ω为1.15，之后我们再探究收敛性与ω的关系。
+判停条件是前3位数字不变，于是用了`(round(x,3)!=round(y,3))`。另一种常用的条件是：max(abs(x-y))>1E-3。但这个实际上并不满足需求，可以举出反例，0.3726与0.372虽然相差不到0.001，但是四舍五入以后的前三位不相同。而`(round(x,3)!=round(y,3))`这个条件是更强的，如果满足它，一定也会满足max(abs(x-y))<1E-3。因此用这个判停条件，而不是max(abs(x-y))>1E-3，迭代次数和精确度会更高。
+衡量与精确解的误差用的是：每一个元素的相对误差构成的向量的无穷范数。用代码表达是：`max((solveIter(A$A,A$b,mode = mode)-A$correct)/A$correct)`，不同于$\frac{\begin{Vmatrix} \Delta x \end{Vmatrix}} {\begin{Vmatrix}x\end{Vmatrix}}$。
+设置了最大迭代次数为5000(考虑到希望较快得到结果)，这是因为SOR可能不收敛，同时使方法更加通用。
+起点选择的是：全是1。
+三种解方程的迭代方法的代码如下：
+```{r}
+solveIter <- function(A,b,mode,st,max_iter=5000,omega=1.15) {
+  #mode=1/2/3分别是Jacobi/GS/SOR，而st是迭代的起点
+    #对一些参数的设定
+    n=nrow(A);
+    if(missing(st)) st=rep(1,n);
+    getNewJacobix=function(x) {
+        y=numeric(n);
+        for(i in 1:n)
+        y[i]=b[i]/A[i,i]-sum(A[i,-i]*x[-i])/A[i,i];
+        return(y);
+    }
+    getNewGSx=function(x) {
+      for(i in 1:n)
+            x[i]=b[i]/A[i,i]-sum(A[i,-i]*x[-i])/A[i,i];
+      return(x);
+    }
+    getNewSORx=function(x) {
+              for(i in 1:n)
+            x[i]=x[i]*(1-omega)+omega*(b[i]/A[i,i]-sum(A[i,-i]*x[-i])/A[i,i]);
+              return(x);
+    }
+    getnewx=function(x)
+      switch(mode,getNewJacobix(x),getNewGSx(x),getNewSORx(x))
+x=st;
+y=getnewx(x);
+count=1;
+while(any(round(x,3)!=round(y,3))) {
+      x=y;
+    y=getnewx(x);
+    count=count+1;
+    if(count>max_iter) {
+      #error('不收敛');
+      return(-1) #-1表示有问题
+    }
+}
+return(list(x=y,count=count));
+}
+```
+
+用于产生题目中的矩阵A和b以及准确解的代码如下
+```{r}
+generateA=function(ep,a,n) {
+  #用于生成方程的A,b以及正确的解
+   h=1/n
+   A=diag(rep(-(2*ep+h),n-1));
+   A[(row(A)-col(A))==1]<-ep
+   A[(row(A)-col(A))==-1]<-ep+h
+   b=rep(rep(a*h*h,n-1));
+   b[n-1]=b[n-1]-ep-h;
+   x=(1:(n-1))/n;
+   correct=(1-a)/(1-exp(-1/ep))*(1-exp(-x/ep))+a*x;
+   return(list(A=A,b=b,correct=correct))
+}
+```
+
+由于题目中ε会变化，而n和a不变。下面这个函数对ε进行了封装，计算a=0.5,n=100，输入ε和所用的迭代方法，返回误差和迭代次数。
+```{r}
+error_count<-function(A,mode,omega){
+  #其中A是generateA的返回，此函数作用返回误差和迭代次数
+  if(missing(omega)) {
+    sol=solveIter(A$A,A$b,mode = mode)
+  } else {
+    sol=solveIter(A$A,A$b,mode = mode,omega=omega)
+  }
+  if(class(sol)=="list") 
+  return(list(error=max(abs((sol$x-A$correct)/A$correct)),count=sol$count))
+  else
+    return(list(error=-1,count=-1))
+  }
+testEp<-function(ep,mode) {
+  A=generateA(ep,0.5,100)
+  if(missing(mode)) {
+    return(sapply(1:3,error_count,A=A))
+  } else {
+    return(error_count(A,mode))
+  }
+}
+```
+
+## (1)
+得到的Jacobi,GS,SOR分别如下，这里SOR的ω取值为1.15
+```{r}
+testEp(ep=1)
+```
+
+SOR的表现是最好的，其次是G-S，Jacobi表现最差。而且迭代次数不与误差成反比，Jacobi误差最大，迭代次数最多，SOR迭代次数最少，但误差是最小的。这符合所学：G-S迭代更快，SOR在大部分时候都比两种迭代法迭代次数少。
+
+### (2)
+```{r}
+testEp(ep=0.1)
+testEp(ep=0.01)
+testEp(ep=0.0001)
+```
+
+纵向对比：随着ε减小，三种方法的迭代次数都在不断减小，但是误差并不是随ε单减的(ε=0.0时1的误差大于ε=0.1)。ε=0.01处的误差>0.1处的误差。
+横向对比：在ε=1和0.1的时候(比较大的时候)，Jacobi表现得最差，误差和迭代次数都是最大的。但是当ε更小(=0.01以及0.0001)时，三种方法的误差就差不多了。G-S的迭代次数总是比Jacobi更少。但SOR与它们比起来，就很不确定了。当ε=1和0.1时，无论是迭代次数还是误差，SOR都是很好的，但是当ε=0.0001，SOR的迭代次数最大。
+
+## SOR的效果与ω的关系
+```{r}
+A=generateA(0.0001,0.5,100) #由于事实上也可变，可以在外面再做一次封装。
+#需要测试的omega
+omega=seq(0.05,1.95,by=0.05)
+res<-sapply(omega,function(ome)error_count(A=A,mode=3,omega = ome))
+```
+
+```{r}
+getcol<-function(v) {
+  #v是一个向量
+  col=rep(1,length(v))
+  col[v==-1]=2 #2是红色
+  return(col)
+}
+plot(x=omega,res[1,],col=getcol(res[1,]),pch=19)
+text(omega,res[1,],omega,pos = 3,cex=0.4)
+```
+
+图中红色的点表示不收敛，可以看到，ε=0.0001时，当ω在[0.05,1.15]区间上的时候，是收敛的，但是对于<0.15的ω，误差很大。>=1.2则完全不收敛。
+至于迭代次数
+```{r}
+plot(x=omega,res[2,],col=getcol(res[2,]),pch=19)
+text(omega,res[2,],omega,pos = 3,cex=0.4)
+```
+
+可以看到，之所以0.05和0.1的误差那么大，是因为迭代次数太少。迭代次数随ω先增后降，在1.0时迭代次数最小，此时也就是G-S方法。
+
+通过这个实验，看到SOR的收敛性与ω有很大的关系，看来SOR并不是很可靠，有时候SOR的表现是最优的 ，但一般情况我会选择G-S方法，它的收敛性可靠(相比SOR)，而且迭代次数和误差通常优于Jacobi。

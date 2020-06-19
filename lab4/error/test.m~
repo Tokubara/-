@@ -1,0 +1,18 @@
+
+%case0 完全不对，NaN,inf之类的
+% x=rand(3,1);
+% b=A*x;
+%case2 差不多
+% A=[3,1;1,2];
+% b=[5;5];
+% A=[1,2;3,1];
+% b=[5;5];
+% [y,count]=solveIter(A,b,1)
+% [A,b,correct]=generateA(0.001,1/2,100);
+% norm((solveIter(A,b,1)-correct')./correct',inf)
+% norm(solveIter(A,b,2)-correct',inf)
+% norm(solveIter(A,b,3)-correct',inf)
+
+A=[10,3,1;2,-10,3;1,3,10];
+b=[14;-5;14];
+solveIter(A,b,1)
